@@ -1,0 +1,111 @@
+name: Build
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  PDFIUM_BUILD: "7881"
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Download pdfium
+        shell: pwsh
+        run: ./scripts/fetch-pdfium.ps1
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path Cargo.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+          "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force -Path dist/PDFMark/licenses | Out-Null
+          Copy-Item target/release/PDFMark.exe dist/PDFMark/
+          Copy-Item vendor/pdfium/win-x64/pdfium.dll dist/PDFMark/
+          Copy-Item LICENSE dist/PDFMark/LICENSE.txt
+          Copy-Item THIRD_PARTY_NOTICES.md dist/PDFMark/
+          Copy-Item assets/DejaVuSans-LICENSE.txt dist/PDFMark/licenses/
+          Copy-Item vendor/pdfium/PDFIUM-LICENSE dist/PDFMark/licenses/PDFIUM-LICENSE.txt
+          Compress-Archive -Path dist/PDFMark -DestinationPath "dist/PDFMark-$version-windows-x64.zip" -Force
+
+      - name: Smoke test the packaged app
+        shell: pwsh
+        run: |
+          # The packaged app must start its graphics, load pdfium, open and render a PDF, then exit 0.
+          $env:PDFMARK_SMOKE_TEST = "1"
+          $p = Start-Process -FilePath dist/PDFMark/PDFMark.exe -ArgumentList "tests/fixtures/sample.pdf" -PassThru
+          $null = $p.Handle
+          if (-not $p.WaitForExit(120000)) { Stop-Process -Id $p.Id -Force; throw "PDFMark did not render the test PDF within 120 s" }
+          if ($p.ExitCode -ne 0) { throw "PDFMark smoke test failed with exit code $($p.ExitCode)" }
+          Write-Host "Smoke test passed"
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          function Find-Iscc {
+            $cmd = Get-Command iscc -ErrorAction SilentlyContinue
+            if ($cmd) { return $cmd.Source }
+            foreach ($dir in @("${env:ProgramFiles(x86)}\Inno Setup 6", "$env:ProgramFiles\Inno Setup 6", "${env:ProgramFiles(x86)}\Inno Setup 7", "$env:ProgramFiles\Inno Setup 7")) {
+              if (Test-Path "$dir\ISCC.exe") { return "$dir\ISCC.exe" }
+            }
+            return $null
+          }
+          $iscc = Find-Iscc
+          if (-not $iscc) { choco install innosetup -y --no-progress; $iscc = Find-Iscc }
+          if (-not $iscc) { throw "Inno Setup compiler not found" }
+          & $iscc /DAppVersion=$env:APP_VERSION installer/pdfmark.iss
+          if ($LASTEXITCODE -ne 0) { throw "Installer build failed" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PDFMark-windows-x64
+          path: |
+            dist/*.zip
+            dist/*.exe
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.exe
+
+  linux-tests:
+    name: Tests (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: System libraries
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libgtk-3-dev
+      - name: Download pdfium
+        run: scripts/fetch-pdfium.sh linux-x64
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test
