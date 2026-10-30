@@ -1,0 +1,38 @@
+[package]
+name = "pdfmark"
+version = "1.1.0"
+edition = "2024"
+description = "PDFMark - PDF reader and annotator for Windows"
+license = "MIT"
+
+[dependencies]
+eframe = "0.37"
+egui = "0.37"
+pdfium-render = { version = "0.9", default-features = false, features = ["pdfium_latest", "thread_safe"] }
+lopdf = "0.46"
+ttf-parser = "0.25"
+subsetter = "0.2"
+rfd = "0.17"
+ureq = "3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
+flate2 = "1"
+
+[build-dependencies]
+winresource = "0.1"
+
+[[bin]]
+name = "PDFMark"
+path = "src/main.rs"
+
+[lib]
+name = "pdfmark"
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+strip = true
