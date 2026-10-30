@@ -469,9 +469,16 @@ impl PdfMarkApp {
             }
             ui.add_space(30.0);
             ui.horizontal(|ui| {
-                let w = 3.0 * 170.0;
-                ui.add_space((ui.available_width() - w).max(0.0) / 2.0);
-                for t in ["✎  Handwritten notes", "T  Typed text", "⬇  Real PDF export"] {
+                // Measure the pills so the row is truly centred.
+                let labels = ["✎  Handwritten notes", "T  Typed text", "⬇  Real PDF export"];
+                let gap = ui.spacing().item_spacing.x;
+                let total: f32 = labels
+                    .iter()
+                    .map(|t| ui.painter().layout_no_wrap(t.to_string(), FontId::proportional(12.5), INK).size().x + 28.0)
+                    .sum::<f32>()
+                    + gap * (labels.len() - 1) as f32;
+                ui.add_space(((ui.available_width() - total) / 2.0).max(0.0));
+                for t in labels {
                     Frame::new().fill(Color32::WHITE).corner_radius(20).inner_margin(Margin::symmetric(14, 7)).show(ui, |ui| {
                         ui.label(RichText::new(t).size(12.5).color(INK));
                     });
