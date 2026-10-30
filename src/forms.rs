@@ -399,7 +399,7 @@ pub fn parse_da_size(da: &str) -> f64 {
 /// Decodes a PDF text string (UTF-16BE with BOM, UTF-8 with BOM, or PDFDocEncoding).
 pub fn decode_text(bytes: &[u8]) -> String {
     if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
-        let units: Vec<u16> = bytes[2..].chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+        let units: Vec<u16> = bytes[2..].as_chunks::<2>().0.iter().map(|c| u16::from_be_bytes(*c)).collect();
         return String::from_utf16_lossy(&units);
     }
     if bytes.len() >= 3 && bytes[..3] == [0xEF, 0xBB, 0xBF] {
